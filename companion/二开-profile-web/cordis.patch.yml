@@ -1,0 +1,51 @@
+# 迁移自 Hermes 的 MCP 服务器配置 (2026-08-13)
+# 4 个 stdio MCP: pentrack / platform-vuln / workflow-pipeline / chrome
+- insert:
+    - id: mcp-pentrack
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pentrack
+        transport: stdio
+        command: python
+        args:
+          - <PENTRACK_PATH>/mcp_server.py
+
+    - id: mcp-platform-vuln
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: platform-vuln
+        transport: stdio
+        command: python
+        args:
+          - <PLATFORM_VULN_PATH>/platform_vuln_mcp.py
+        env:
+          PLATFORM_DB: C:\av\DesRedTeam-Source-All\desredteam\data\conversations.db
+
+    - id: mcp-workflow-pipeline
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: workflow-pipeline
+        transport: stdio
+        command: python
+        args:
+          - <WORKFLOW_PATH>/mcp_server.py
+
+    - id: mcp-chrome
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: chrome
+        transport: stdio
+        command: npx
+        args:
+          - '-y'
+          - 'chrome-devtools-mcp@latest'
+          - '--browser-url=http://localhost:9222'
+
+    - id: mcp-desmin
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: desmin
+        transport: stdio
+        command: python
+        args:
+          - <DESMIN_PATH>/desmin_mcp.py

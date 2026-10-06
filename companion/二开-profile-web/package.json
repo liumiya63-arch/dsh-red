@@ -1,0 +1,18 @@
+{
+  "name": "dsh-profile-web",
+  "private": true,
+  "dependencies": {
+    "@dsh-external/dsh-super-injector": "link:<ROUTING_SUITE_PATH>/injector",
+    "@dsh-external/desmin-memory-injector": "link:C:\\Users\\test\\Documents\\dsh-deepseek\\desmin-memory-injector"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@dsh-external/dsh-super-injector",
+        "@dsh-external/desmin-memory-injector"
+      ]
+    }
+  }
+}

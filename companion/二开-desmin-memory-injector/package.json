@@ -1,0 +1,29 @@
+{
+  "name": "@dsh-external/desmin-memory-injector",
+  "version": "0.1.0",
+  "description": "DesMin 记忆自动注入插件：每次会话组装时自动把铁律/项目映射/凭据/待办/进化日志注入 system prompt。",
+  "private": false,
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "cordis": ">=4.0.0-rc <5"
+  },
+  "scripts": {
+    "build": "node scripts/build.js"
+  }
+}

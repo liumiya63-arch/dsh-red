@@ -1,0 +1,111 @@
+package app
+
+import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"desredteam/internal/config"
+)
+
+// mainTLSMode 主 Web 服务 TLS 启动方式。
+type mainTLSMode int
+
+const (
+	mainTLSOff mainTLSMode = iota
+	mainTLSFromFiles
+	mainTLSInMemorySelfSigned
+)
+
+// prepareMainServerTLS 根据 server 配置决定主站是否启用 HTTPS（及 HTTP/2 协商）。
+// fromFiles：使用 tls_cert_path + tls_key_path，由 http.Server.ListenAndServeTLS 加载 PEM。
+// inMemory：tls_auto_self_sign 生成的自签证书，仅用于本地/测试。
+func prepareMainServerTLS(cfg *config.ServerConfig) (mode mainTLSMode, tlsConf *tls.Config, certFile, keyFile string, err error) {
+	if cfg == nil || !config.MainWebUIUsesHTTPS(cfg) {
+		return mainTLSOff, nil, "", "", nil
+	}
+	certFile = strings.TrimSpace(cfg.TLSCertPath)
+	keyFile = strings.TrimSpace(cfg.TLSKeyPath)
+	if certFile != "" && keyFile != "" {
+		// 证书由 ListenAndServeTLS 从文件加载；此处仅提供最小 TLS 配置供 http2.ConfigureServer 合并 ALPN。
+		return mainTLSFromFiles, &tls.Config{MinVersion: tls.VersionTLS12}, certFile, keyFile, nil
+	}
+	if cfg.TLSAutoSelfSign {
+		// 优先复用 data/ 下已持久化的自签证书（浏览器信任一次后重启不失效）
+		certPath := filepath.Join("data", "selfsigned_cert.pem")
+		keyPath := filepath.Join("data", "selfsigned_key.pem")
+		if diskCert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+			tlsConf = &tls.Config{
+				MinVersion:   tls.VersionTLS12,
+				Certificates: []tls.Certificate{diskCert},
+			}
+			return mainTLSFromFiles, tlsConf, certPath, keyPath, nil
+		}
+		cert, genErr := generateMainServerSelfSignedCert()
+		if genErr != nil {
+			return mainTLSOff, nil, "", "", fmt.Errorf("生成自签 TLS 证书: %w", genErr)
+		}
+		// 持久化证书与私钥，重启复用（浏览器信任不失效）
+		_ = os.MkdirAll("data", 0o755)
+		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
+		var keyPEM []byte
+		if ecdsaKey, ok := cert.PrivateKey.(*ecdsa.PrivateKey); ok {
+			if der, derErr := x509.MarshalECPrivateKey(ecdsaKey); derErr == nil {
+				keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+			}
+		}
+		if len(certPEM) > 0 && len(keyPEM) > 0 {
+			_ = os.WriteFile(certPath, certPEM, 0o600)
+			_ = os.WriteFile(keyPath, keyPEM, 0o600)
+		}
+		tlsConf = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
+		}
+		return mainTLSInMemorySelfSigned, tlsConf, "", "", nil
+	}
+	return mainTLSOff, nil, "", "", fmt.Errorf("server: 已启用 TLS（tls_enabled / tls_auto_self_sign / 证书路径），请设置 tls_cert_path 与 tls_key_path，或将 tls_auto_self_sign 设为 true（仅测试环境）")
+}
+
+func generateMainServerSelfSignedCert() (tls.Certificate, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "DesRedTeam"},
+		NotBefore:    time.Now().Add(-1 * time.Hour),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		DNSNames:     []string{"localhost"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
